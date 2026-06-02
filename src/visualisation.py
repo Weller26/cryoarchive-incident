@@ -5,7 +5,7 @@ def visualize_spectogram(spectogram, name=None):
     plt.imshow(spectogram.squeeze().numpy(), origin='lower', aspect='auto', cmap='magma')
     plt.colorbar(format='%+2.0f')
     if name is not None:
-        plt.title(f'Спектограмма {name}')
+        plt.title(f'Спектрограмма {name}')
         
     plt.xlabel('Time')
     plt.ylabel('Frequency')

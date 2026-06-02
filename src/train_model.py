@@ -131,7 +131,18 @@ def train_model(
                         'epoch': epoch + 1,
                         'val_loss': avg_val_loss,
                     },
-                    save_path,
+                    f'{save_path}_{epoch + 1}_best.pt' ,
+                )
+        else:
+            if save_path is not None:
+                torch.save(
+                    {
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'epoch': epoch + 1,
+                        'val_loss': avg_val_loss,
+                    },
+                    f'{save_path}_{epoch + 1}.pt',
                 )
 
         if scheduler is not None:
@@ -151,4 +162,4 @@ def train_model(
     if restore_best and best_state_dict is not None:
         model.load_state_dict(best_state_dict)
 
-    return history
+    return model, history
