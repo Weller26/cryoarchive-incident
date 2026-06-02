@@ -39,11 +39,12 @@ def train_model(
     criterion: nn.CTCLoss,
     optimizer,
     train_loader,
-    val_loader,
+    val_loader = None,
     epochs: int = 50,
     device='cpu',
     scheduler=None,
     grad_clip: float | None = 5.0,
+    is_conformer: bool = False,
     save_path: str | None = None,
     restore_best: bool = True,
     verbose: bool = True,
@@ -64,7 +65,11 @@ def train_model(
 
             optimizer.zero_grad(set_to_none=True)
 
-            outputs = model(inputs)
+            if is_conformer:
+                outputs = model(inputs, input_lengths.to(device))
+            else:
+                outputs = model(inputs)
+
             log_probs, targets_1d, output_lengths, target_lengths = _prepare_ctc_inputs(
                 outputs=outputs,
                 inputs=inputs,
@@ -89,37 +94,40 @@ def train_model(
 
         avg_train_loss = train_loss / len(train_loader)
 
-        model.eval()
-        val_loss = 0.0
+        if val_loader is not None:
+            model.eval()
+            val_loss = 0.0
 
-        with torch.no_grad():
-            for inputs, targets, input_lengths, target_lengths in val_loader:
-                inputs = inputs.to(device)
-                targets = targets.to(device)
 
-                outputs = model(inputs)
-                log_probs, targets_1d, output_lengths, target_lengths = _prepare_ctc_inputs(
-                    outputs=outputs,
-                    inputs=inputs,
-                    targets=targets,
-                    input_lengths=input_lengths,
-                    target_lengths=target_lengths,
-                )
+            with torch.no_grad():
+                for inputs, targets, input_lengths, target_lengths in val_loader:
+                    inputs = inputs.to(device)
+                    targets = targets.to(device)
 
-                loss = criterion(
-                    log_probs,
-                    targets_1d,
-                    output_lengths,
-                    target_lengths,
-                )
-                val_loss += loss.item()
+                    outputs = model(inputs)
+                    log_probs, targets_1d, output_lengths, target_lengths = _prepare_ctc_inputs(
+                        outputs=outputs,
+                        inputs=inputs,
+                        targets=targets,
+                        input_lengths=input_lengths,
+                        target_lengths=target_lengths,
+                    )
 
-        avg_val_loss = val_loss / len(val_loader)
+                    loss = criterion(
+                        log_probs,
+                        targets_1d,
+                        output_lengths,
+                        target_lengths,
+                    )
+                    val_loss += loss.item()
+
+
+        avg_val_loss = None if val_loader is None else val_loss / len(val_loader)
 
         history['train_loss'].append(avg_train_loss)
         history['val_loss'].append(avg_val_loss)
 
-        if avg_val_loss < best_val_loss:
+        if val_loader is not None and avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             best_state_dict = copy.deepcopy(model.state_dict())
 
@@ -147,17 +155,20 @@ def train_model(
 
         if scheduler is not None:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(avg_val_loss)
+                if val_loader is not None:
+                    scheduler.step(avg_val_loss)
+                else:
+                    scheduler.step(avg_train_loss)
             else:
                 scheduler.step()
 
         if verbose:
-            print(
-                f'Epoch {epoch + 1}/{epochs} | '
-                f'train_loss: {avg_train_loss:.4f} | '
-                f'val_loss: {avg_val_loss:.4f} | '
-                f'best_val_loss: {best_val_loss:.4f}'
-            )
+            verbose_output = (f'Epoch {epoch + 1}/{epochs} | '
+                      f'train_loss: {avg_train_loss:.4f}')
+            if val_loader is not None:
+                verbose_output += (f' | val_loss: {avg_val_loss:.4f} | '
+                           f'best_val_loss: {best_val_loss:.4f}')
+            print(verbose_output)
 
     if restore_best and best_state_dict is not None:
         model.load_state_dict(best_state_dict)

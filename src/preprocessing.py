@@ -34,7 +34,7 @@ def transform_wav_to_spectrogram(
     audio_path: str,
     spectrogram,
     amplitude_to_db,
-    target_sr=8000
+    target_sr=8000,
 ) -> torch.Tensor:
     waveform, sr = torchaudio.load(audio_path)
     
@@ -52,11 +52,11 @@ def transform_wav_to_spectrogram(
     spec = amplitude_to_db(spec)
     
     spec = spec[:, :70, :]
+ 
+    spec = _dynamic_frequency_masking(spec)
+    spec = _thresholding(spec)
     
     spec = (spec - spec.mean()) / (spec.std() + 1e-8)
-    
-    spec = _thresholding(spec)
-    spec = _dynamic_frequency_masking(spec)
     
     return spec
 

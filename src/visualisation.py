@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-def visualize_spectogram(spectogram, name=None):
+def visualize_spectrogram(spectogram, name=None):
     plt.figure(figsize=(10, 4))
     plt.imshow(spectogram.squeeze().numpy(), origin='lower', aspect='auto', cmap='magma')
     plt.colorbar(format='%+2.0f')
