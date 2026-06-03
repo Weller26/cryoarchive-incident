@@ -2,6 +2,7 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from src.evaluate import batch_levenshtein_distance
 
 
 def _prepare_ctc_inputs(
@@ -43,6 +44,8 @@ def train_model(
     epochs: int = 50,
     device='cpu',
     scheduler=None,
+    save_by_leven: bool = False,
+    idx_to_char: dict | None = None,
     grad_clip: float | None = 5.0,
     is_conformer: bool = False,
     save_path: str | None = None,
@@ -51,8 +54,9 @@ def train_model(
 ):
     model.to(device)
 
-    history = {'train_loss': [], 'val_loss': []}
+    history = {'train_loss': [], 'val_loss': [], 'val_leven': []}
     best_val_loss = float('inf')
+    best_leven_dist = float('inf')
     best_state_dict = None
 
     for epoch in range(epochs):
@@ -95,16 +99,23 @@ def train_model(
         avg_train_loss = train_loss / len(train_loader)
 
         if val_loader is not None:
+            if save_by_leven and idx_to_char is None:
+                raise ValueError('idx_to_char must be provided when save_by_leven=True')
+
             model.eval()
             val_loss = 0.0
-
+            leven_distances = []
 
             with torch.no_grad():
                 for inputs, targets, input_lengths, target_lengths in val_loader:
                     inputs = inputs.to(device)
                     targets = targets.to(device)
 
-                    outputs = model(inputs)
+                    if is_conformer:
+                        outputs = model(inputs, input_lengths.to(device))
+                    else:
+                        outputs = model(inputs)
+
                     log_probs, targets_1d, output_lengths, target_lengths = _prepare_ctc_inputs(
                         outputs=outputs,
                         inputs=inputs,
@@ -112,7 +123,17 @@ def train_model(
                         input_lengths=input_lengths,
                         target_lengths=target_lengths,
                     )
-
+                    
+                    _, distances, _, _ = batch_levenshtein_distance(
+                        outputs=log_probs,
+                        targets=targets,
+                        output_lengths=output_lengths,
+                        target_lengths=target_lengths,
+                        idx_to_char=idx_to_char
+                    )
+                    
+                    leven_distances.extend(distances)
+                        
                     loss = criterion(
                         log_probs,
                         targets_1d,
@@ -123,12 +144,24 @@ def train_model(
 
 
         avg_val_loss = None if val_loader is None else val_loss / len(val_loader)
+        avg_leven_dist = None if val_loader is None else sum(leven_distances) / max(len(leven_distances), 1)
 
         history['train_loss'].append(avg_train_loss)
         history['val_loss'].append(avg_val_loss)
+        history['val_leven'].append(avg_leven_dist)
 
-        if val_loader is not None and avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
+        if val_loader is not None:
+            improved = (
+                avg_leven_dist < best_leven_dist
+                if save_by_leven
+                else avg_val_loss < best_val_loss
+            )
+        else:
+            improved = False
+
+        if improved:
+            best_val_loss = avg_val_loss if avg_val_loss < best_val_loss else best_val_loss
+            best_leven_dist = avg_leven_dist if avg_leven_dist < best_leven_dist else best_leven_dist
             best_state_dict = copy.deepcopy(model.state_dict())
 
             if save_path is not None:
@@ -138,6 +171,7 @@ def train_model(
                         'optimizer_state_dict': optimizer.state_dict(),
                         'epoch': epoch + 1,
                         'val_loss': avg_val_loss,
+                        'val_leven': avg_leven_dist
                     },
                     f'{save_path}_{epoch + 1}_best.pt' ,
                 )
@@ -149,6 +183,7 @@ def train_model(
                         'optimizer_state_dict': optimizer.state_dict(),
                         'epoch': epoch + 1,
                         'val_loss': avg_val_loss,
+                        'val_leven': avg_leven_dist
                     },
                     f'{save_path}_{epoch + 1}.pt',
                 )
@@ -167,7 +202,9 @@ def train_model(
                       f'train_loss: {avg_train_loss:.4f}')
             if val_loader is not None:
                 verbose_output += (f' | val_loss: {avg_val_loss:.4f} | '
-                           f'best_val_loss: {best_val_loss:.4f}')
+                                   f'best_val_loss: {best_val_loss:.4f} | '
+                                   f'avg_leven_dist: {avg_leven_dist:.4f} | '
+                                   f'best_leven_dist: {best_leven_dist:.4f}')
             print(verbose_output)
 
     if restore_best and best_state_dict is not None:
