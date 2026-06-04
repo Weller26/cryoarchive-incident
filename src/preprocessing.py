@@ -22,7 +22,7 @@ def _dynamic_frequency_masking(spec, window=3):
     
     return clean_spec
 
-def _thresholding(spec, threshold_percentile=0.95):
+def _thresholding(spec, threshold_percentile=0.9):
     threshold_val = torch.quantile(spec, threshold_percentile)
 
     min_val = spec.min()
