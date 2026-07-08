@@ -95,6 +95,8 @@
 
 Важно: baseline-модели в таблице сравнивались по validation CTC loss, а Optuna-ветка - напрямую по Levenshtein Mean, поэтому основным качественным результатом проекта считается именно GRU + Optuna.
 
+Итоговый Kaggle score лучшего сабмита на тестовой выборке: **1.33720**.
+
 ## Что было сделано
 
 - Построен полный пайплайн распознавания аудио: preprocessing, датасет, batching переменных длин, обучение, валидация и генерация Kaggle submission.
@@ -129,4 +131,3 @@
 ## Стек
 
 Python, PyTorch, torchaudio, scikit-learn, Optuna, python-Levenshtein, pandas, NumPy, Matplotlib.
-
